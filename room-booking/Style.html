@@ -70,8 +70,10 @@ input[type=text],input[type=password],input[type=date],select{width:100%;padding
 .banner.closed{background:var(--off-a);border:1px solid var(--off-line);color:var(--off-ink)}
 
 /* 팀 패널 */
-.team{margin-bottom:12px}
-.team h3{font-size:1rem;margin-bottom:10px}
+.card.team{margin-bottom:12px}
+.card.team h3{font-size:1rem;margin-bottom:4px}
+.limitnote{font-size:.75rem;color:var(--muted);margin:0 0 10px}
+.nores{font-size:.8rem;margin:0}
 .meters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:10px}
 .meter .row{display:flex;justify-content:space-between;gap:4px;font-size:.9rem;margin-bottom:4px;white-space:nowrap}
 .bar{height:10px;border-radius:99px;background:var(--other-bg);overflow:hidden}
@@ -87,7 +89,7 @@ table.list small.tm{display:block;font-size:.72rem;color:var(--muted);line-heigh
 .me{font-weight:700;color:var(--pri)}
 
 /* 범례 */
-.legend{display:flex;gap:10px;flex-wrap:nowrap;font-size:.82rem;color:var(--muted);margin:4px 0 12px}
+.legend{display:flex;gap:12px;flex-wrap:nowrap;font-size:.82rem;color:var(--muted);margin:4px 0 12px}
 .legend span{display:inline-flex;align-items:center;white-space:nowrap}
 .lg{display:inline-block;flex:none;width:14px;height:14px;border-radius:4px;margin-right:4px;border:1.5px solid}
 .lg.tcs{background:linear-gradient(90deg,#fce7f3 0 33%,#e0f2fe 33% 66%,#fef9c3 66%);border-color:#cbd5e1}
@@ -194,8 +196,8 @@ table.sum th{background:var(--other-bg)}
   .tools .range{flex-basis:100%;order:-1;min-width:0}
   .meters{gap:8px}
   .meter .row{font-size:.78rem}
-  .legend{gap:6px;font-size:clamp(.56rem,2.8vw,.82rem)}
-  .lg{width:11px;height:11px;margin-right:3px}
+  .legend{gap:9px;font-size:clamp(.56rem,2.8vw,.82rem)}
+  .lg{width:11px;height:11px;margin-right:4px}
 }
 
 @media print{

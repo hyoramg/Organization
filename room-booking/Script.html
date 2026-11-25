@@ -157,8 +157,13 @@
         t.list.map(function (x) {
           return '<tr><td>' + esc(x.label) + '</td><td>' + esc(x.period) + '<small class="tm">' + esc(x.time) + '</small></td><td class="pl">' + esc(x.placeName) + '</td><td class="' + (x.mine ? 'me' : '') + '">' + esc(x.name) + (x.mine ? ' (나)' : '') + '</td></tr>';
         }).join('') + '</tbody></table></div>'
-      : '<p class="muted" style="margin:0">이 주에는 우리 팀 예약이 아직 없어요.</p>';
+      : '<p class="muted nores">이 주에는 우리 팀 예약이 아직 없어요.</p>';
+    var maxes = t.meters.map(function (m) { return m.max; });
+    var note = maxes.every(function (x) { return x === maxes[0]; })
+      ? '매주 각 시간대마다 최대 ' + maxes[0] + '회 예약 가능'
+      : '매주 ' + t.meters.map(function (m) { return m.period + ' 최대 ' + m.max + '회'; }).join(' · ') + ' 예약 가능';
     return '<section class="card team no-print"><h3>👥 우리 팀 현황 · ' + esc(t.name || '팀 미지정') + '</h3>' +
+      '<p class="limitnote">' + esc(note) + '</p>' +
       '<div class="meters">' + t.meters.map(meter).join('') + '</div>' +
       '<div class="members">팀원: ' + esc(t.members.join(', ') || '-') + '</div>' + list + '</section>';
   }
