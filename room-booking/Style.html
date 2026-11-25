@@ -12,6 +12,8 @@
   --team-bg:#e0f2fe; --team-line:#38bdf8; --team-ink:#075985;
   --other-bg2:#fee2e2; --other-line:#f87171; --other-ink:#b91c1c;
   --off-a:#fff1f2; --off-b:#ffe4e6; --off-line:#fda4af; --off-ink:#9f1239;
+  /* 휴무: 회색 (예약 불가/오픈 전의 붉은색과 구분) */
+  --hol-a:#f8fafc; --hol-b:#e8edf3; --hol-line:#94a3b8; --hol-ink:#475569;
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
@@ -97,6 +99,7 @@ table.list small.tm{display:block;font-size:.72rem;color:var(--muted);line-heigh
 .lg.mine{background:var(--mine-bg);border-color:var(--mine-line)}
 .lg.team{background:var(--team-bg);border-color:var(--team-line)}
 .lg.other{background:var(--other-bg2);border-color:var(--other-line)}
+.lg.hol{background:repeating-linear-gradient(135deg,var(--hol-a) 0 4px,var(--hol-b) 4px 8px);border:1.5px dashed var(--hol-line)}
 .lg.off{background:repeating-linear-gradient(135deg,var(--off-a) 0 4px,var(--off-b) 4px 8px);border:1.5px dashed var(--off-line)}
 
 /* 팀 색(0~11, 연두 계열은 마지막 번호) */
@@ -120,7 +123,7 @@ table.list small.tm{display:block;font-size:.72rem;color:var(--muted);line-heigh
 .day{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;box-shadow:var(--shadow)}
 .day h3{display:flex;align-items:baseline;gap:6px;font-size:1.1rem;margin-bottom:8px}
 .day h3 small{color:var(--muted);font-weight:400;font-size:.85rem}
-.holtag{background:var(--off-a);color:var(--off-ink);border:1px solid var(--off-line);border-radius:8px;padding:4px 8px;font-size:.82rem;margin-bottom:8px}
+.holtag{background:var(--hol-b);color:var(--hol-ink);border:1px solid var(--hol-line);border-radius:8px;padding:4px 8px;font-size:.82rem;margin-bottom:8px}
 .ptitle{display:flex;justify-content:space-between;font-size:.82rem;color:var(--muted);margin:10px 0 6px}
 .ptitle b{color:var(--ink)}
 .slot{display:flex;flex-direction:column;align-items:flex-start;width:100%;min-height:52px;margin-bottom:6px;padding:8px 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);cursor:pointer;text-align:left}
@@ -131,7 +134,8 @@ table.list small.tm{display:block;font-size:.72rem;color:var(--muted);line-heigh
 .slot.mine{background:var(--mine-bg);border-color:var(--mine-line);color:var(--mine-ink)}
 .slot.team{background:var(--team-bg);border-color:var(--team-line);color:var(--team-ink)}
 .slot.other{background:var(--other-bg2);border-color:var(--other-line);color:var(--other-ink);cursor:default}
-.slot.closed,.slot.holiday{background:repeating-linear-gradient(135deg,var(--off-a) 0 8px,var(--off-b) 8px 16px);border:1.5px dashed var(--off-line);color:var(--off-ink);cursor:not-allowed}
+.slot.closed{background:repeating-linear-gradient(135deg,var(--off-a) 0 8px,var(--off-b) 8px 16px);border:1.5px dashed var(--off-line);color:var(--off-ink);cursor:not-allowed}
+.slot.holiday{background:repeating-linear-gradient(135deg,var(--hol-a) 0 8px,var(--hol-b) 8px 16px);border:1.5px dashed var(--hol-line);color:var(--hol-ink);cursor:not-allowed}
 .slot .st.sm{font-size:.76rem}
 .slot.tfree .st{font-size:.72rem}
 @media (min-width:1200px){.slot.tfree .st{white-space:nowrap}}
@@ -174,7 +178,7 @@ table.cal th.rowh small{display:block;margin-top:3px;font-size:.72rem;color:var(
 table.cal td small.hn{display:block;color:var(--muted);font-size:.74rem;margin-top:2px}
 table.cal td.filled{background:var(--tb);color:#1e293b}
 table.cal td.empty{color:var(--muted)}
-table.cal td.hol{background:var(--off-a);color:var(--off-ink)}
+table.cal td.hol{background:var(--hol-b);color:var(--hol-ink)}
 table.sum{width:100%;border-collapse:collapse;margin-top:16px;font-size:.9rem}
 table.sum th,table.sum td{border:1px solid var(--line);padding:6px 8px;text-align:center}
 table.sum th{background:var(--other-bg)}
@@ -198,6 +202,11 @@ table.sum th{background:var(--other-bg)}
   .meter .row{font-size:.78rem}
   .legend{gap:9px;font-size:clamp(.56rem,2.8vw,.82rem)}
   .lg{width:11px;height:11px;margin-right:4px}
+}
+
+@media (max-width:340px){
+  .legend{gap:5px;font-size:.54rem}
+  .lg{width:9px;height:9px;margin-right:3px}
 }
 
 @media print{

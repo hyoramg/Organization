@@ -135,8 +135,8 @@
         '<div class="banner" id="banner" role="status"></div>' +
         (r.team ? teamPanel(r.team) : '') +
         (isT()
-          ? '<div class="legend no-print"><span><i class="lg free"></i>비어 있음</span><span><i class="lg tcs"></i>예약됨 (팀별 색)</span><span><i class="lg off"></i>휴무</span></div>'
-          : '<div class="legend no-print"><span><i class="lg free"></i>예약 가능</span><span><i class="lg mine"></i>내 예약</span><span><i class="lg team"></i>우리 팀</span><span><i class="lg other"></i>다른 팀</span><span><i class="lg off"></i>예약 불가/휴무</span></div>') +
+          ? '<div class="legend no-print"><span><i class="lg free"></i>비어 있음</span><span><i class="lg tcs"></i>예약됨 (팀별 색)</span><span><i class="lg hol"></i>휴무</span></div>'
+          : '<div class="legend no-print"><span><i class="lg free"></i>예약 가능</span><span><i class="lg mine"></i>내 예약</span><span><i class="lg team"></i>우리 팀</span><span><i class="lg other"></i>다른 팀</span><span><i class="lg off"></i>예약 불가</span><span><i class="lg hol"></i>휴무</span></div>') +
         '<div class="days" id="days">' + r.days.map(dayHtml).join('') + '</div>';
       $('#wPrev').onclick = function () { S.bookMonday = addWeeks(S.bookMonday, -1); renderBook(); };
       $('#wNext').onclick = function () { S.bookMonday = addWeeks(S.bookMonday, 1); renderBook(); };
