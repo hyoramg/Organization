@@ -1,0 +1,383 @@
+<script>
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+  var S = { token: null, user: null, tab: null, bookMonday: null, reportMonday: null, week: null, report: null, students: null, timer: null, offset: 0 };
+
+  function store(k, v) { try { if (v == null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+
+  // ---------- 서버 호출 ----------
+  function call(fn, args) {
+    return new Promise(function (res) {
+      try {
+        var run = google.script.run
+          .withSuccessHandler(function (r) { res(r || { ok: false, msg: '응답이 없습니다.' }); })
+          .withFailureHandler(function () { res({ ok: false, msg: '서버 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.' }); });
+        run[fn].apply(run, args);
+      } catch (e) { res({ ok: false, msg: '서버 연결 오류가 발생했습니다.' }); }
+    });
+  }
+  function api(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return call(fn, [S.token].concat(args)).then(function (r) {
+      if (r.code === 'SESSION') { logout(r.msg, true); }
+      return r;
+    });
+  }
+  // 실패 응답을 처리하고, 실패면 true 반환
+  function bad(r, title) {
+    if (r.ok) return false;
+    if (r.code !== 'SESSION') dialog(r.title || title || '알림', '<p class="pre">' + esc(r.msg) + '</p>', [{ label: '확인', v: 'ok', cls: 'pri' }], true);
+    return true;
+  }
+  function busy(on) { $('#busy').hidden = !on; }
+
+  // ---------- 모달 / 토스트 ----------
+  function dialog(title, bodyHtml, buttons, isError) {
+    return new Promise(function (res) {
+      var root = $('#modalRoot');
+      var bg = document.createElement('div');
+      bg.className = 'modal-bg no-print';
+      bg.innerHTML = '<div class="modal' + (isError ? ' error' : '') + '" role="dialog" aria-modal="true" aria-label="' + esc(title) + '">' +
+        '<h2>' + esc(title) + '</h2><div class="body">' + bodyHtml + '</div><div class="acts"></div></div>';
+      var acts = $('.acts', bg);
+      function close(v, data) { document.removeEventListener('keydown', onKey); if (bg.parentNode) bg.parentNode.removeChild(bg); res({ v: v, data: data }); }
+      function onKey(e) { if (e.key === 'Escape') close(null); }
+      buttons.forEach(function (b) {
+        var el = document.createElement('button');
+        el.type = 'button'; el.className = 'btn ' + (b.cls || ''); el.textContent = b.label;
+        el.onclick = function () { close(b.v, b.collect ? b.collect(bg) : undefined); };
+        acts.appendChild(el);
+      });
+      bg.addEventListener('mousedown', function (e) { if (e.target === bg) close(null); });
+      document.addEventListener('keydown', onKey);
+      root.appendChild(bg);
+      var last = acts.lastChild; if (last) last.focus();
+    });
+  }
+  var toastTimer;
+  function toast(msg) {
+    var t = $('#toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, 2600);
+  }
+
+  // ---------- 로그인 / 로그아웃 ----------
+  $('#loginForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = $('#loginForm button[type=submit]'); btn.disabled = true; $('#loginMsg').textContent = '';
+    call('login', [$('#uid').value, $('#upw').value]).then(function (r) {
+      btn.disabled = false;
+      if (!r.ok) { $('#loginMsg').textContent = r.msg; return; }
+      S.token = r.token; store('tok', r.token); $('#upw').value = '';
+      enter(r);
+    });
+  });
+  $('#logoutBtn').addEventListener('click', function () {
+    call('logout', [S.token]); logout('', false);
+  });
+  function logout(msg, showDialog) {
+    clearInterval(S.timer); S.token = null; S.user = null; store('tok', null);
+    $('#mainView').hidden = true; $('#loginView').hidden = false;
+    $('#loginMsg').textContent = (!showDialog && msg) ? msg : '';
+    if (showDialog && msg) dialog('로그아웃됨', '<p>' + esc(msg) + '</p>', [{ label: '확인', v: 'ok', cls: 'pri' }]);
+  }
+  function enter(r) {
+    S.user = r.user; S.offset = r.nowMs - Date.now();
+    S.bookMonday = r.defaults.bookMonday; S.reportMonday = r.defaults.reportMonday;
+    $('#loginView').hidden = true; $('#mainView').hidden = false;
+    $('#whoName').textContent = r.user.name + (r.user.role === 'teacher' ? ' 선생님' : '');
+    $('#whoChip').textContent = r.user.role === 'teacher' ? '교사' : (r.user.team || '팀 미지정');
+    var tabs = r.user.role === 'teacher'
+      ? [['report', '📅 예약 달력 출력'], ['book', '🛠 예약 관리'], ['hol', '🚫 휴무일'], ['pw', '🔑 비밀번호']]
+      : [['book', '📝 예약하기'], ['mine', '📋 내 예약'], ['pw', '🔑 비밀번호']];
+    $('#tabs').innerHTML = tabs.map(function (t) { return '<button type="button" role="tab" data-tab="' + t[0] + '">' + t[1] + '</button>'; }).join('');
+    $$('#tabs button').forEach(function (b) { b.onclick = function () { go(b.dataset.tab); }; });
+    go(tabs[0][0]);
+  }
+
+  function go(tab) {
+    S.tab = tab; clearInterval(S.timer);
+    $$('#tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === tab); b.setAttribute('aria-selected', b.dataset.tab === tab); });
+    ({ book: renderBook, mine: renderMine, pw: renderPw, report: renderReport, hol: renderHol })[tab]();
+  }
+  function loading() { $('#content').innerHTML = '<p class="empty-msg">불러오는 중…</p>'; }
+  function addWeeks(ymd, n) {
+    var p = ymd.split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] + 7 * n));
+    return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+  }
+
+  // ---------- 예약하기 / 예약 관리 ----------
+  var STATUS_TXT = { free: '예약 가능', mine: '내 예약 · 눌러서 취소', team: '우리 팀', other: '다른 팀', closed: '예약 불가', holiday: '휴무' };
+
+  function renderBook() {
+    loading();
+    return api('getWeek', S.bookMonday).then(function (r) {
+      if (bad(r)) return;
+      S.week = r; S.bookMonday = r.monday;
+      var isT = r.isTeacher;
+      $('#content').innerHTML =
+        '<div class="weeknav no-print">' +
+        '<button class="btn sm" id="wPrev" type="button">◀ 이전 주</button>' +
+        '<div class="range">' + esc(r.range) + '</div>' +
+        '<button class="btn sm" id="wNext" type="button">다음 주 ▶</button>' +
+        '<button class="btn sm ghost" id="wDef" type="button">예약 대상 주로</button></div>' +
+        '<div class="banner" id="banner" role="status"></div>' +
+        (r.team ? teamPanel(r.team) : '') +
+        '<div class="legend no-print"><span><i style="background:var(--free-bg)"></i>예약 가능</span><span><i style="background:var(--pri)"></i>내 예약</span><span><i style="background:var(--team-bg)"></i>우리 팀</span><span><i style="background:var(--other-bg)"></i>다른 팀</span><span><i style="background:repeating-linear-gradient(135deg,var(--other-bg),var(--other-bg) 4px,transparent 4px,transparent 8px)"></i>예약 불가/휴무</span></div>' +
+        '<div class="days" id="days">' + r.days.map(dayHtml).join('') + '</div>';
+      $('#wPrev').onclick = function () { S.bookMonday = addWeeks(S.bookMonday, -1); renderBook(); };
+      $('#wNext').onclick = function () { S.bookMonday = addWeeks(S.bookMonday, 1); renderBook(); };
+      $('#wDef').onclick = function () { call('restore', [S.token]).then(function (x) { if (x.ok) { S.bookMonday = x.defaults.bookMonday; } renderBook(); }); };
+      $('#days').addEventListener('click', onSlot);
+      startTick(isT);
+    });
+  }
+
+  function teamPanel(t) {
+    function meter(label, n, max) {
+      return '<div class="meter"><div class="row"><span>' + label + '</span><b>' + n + ' / ' + max + '</b></div>' +
+        '<div class="bar" aria-hidden="true"><i class="' + (n >= max ? 'full' : '') + '" style="width:' + Math.min(100, n / max * 100) + '%"></i></div></div>';
+    }
+    var list = t.list.length
+      ? '<table class="list"><thead><tr><th>날짜</th><th>시간대</th><th>장소</th><th>예약한 사람</th></tr></thead><tbody>' +
+        t.list.map(function (x) {
+          return '<tr><td>' + esc(x.label) + '</td><td>' + esc(x.period) + ' <span class="muted">' + esc(x.time) + '</span></td><td>' + esc(x.place) + '</td><td class="' + (x.mine ? 'me' : '') + '">' + esc(x.name) + (x.mine ? ' (나)' : '') + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '<p class="muted" style="margin:0">이 주에는 우리 팀 예약이 아직 없어요.</p>';
+    return '<section class="card team no-print"><h3>👥 우리 팀 현황 · ' + esc(t.name || '팀 미지정') + '</h3>' +
+      '<div class="meters">' + meter('점심', t.lunch, t.limitLunch) + meter('점심+방과후 합계', t.total, t.limitTotal) + '</div>' +
+      '<div class="members">팀원: ' + esc(t.members.join(', ') || '-') + '</div>' + list + '</section>';
+  }
+
+  function dayHtml(day, di) {
+    var out = '<div class="day' + (day.holiday !== null ? ' hol' : '') + '"><h3>' + esc(['일','월','화','수','목','금','토'][day.dow] + '요일') + ' <small>' + esc(day.label.replace(/\(.*$/, '')) + '</small></h3>';
+    if (day.holiday !== null) out += '<div class="holtag">🚫 ' + esc(day.holiday) + '</div>';
+    ['점심', '방과후'].forEach(function (p) {
+      var ss = day.slots.map(function (s, i) { return { s: s, i: i }; }).filter(function (x) { return x.s.period === p; });
+      out += '<div class="ptitle"><b>' + p + '</b><span>' + esc(ss[0].s.time) + '</span></div>';
+      ss.forEach(function (x) {
+        var s = x.s, txt = STATUS_TXT[s.status];
+        if (s.status === 'mine') txt = s.canCancel ? '내 예약 · 눌러서 취소' : '내 예약';
+        else if (s.status === 'team') txt = '우리 팀 · ' + s.name;
+        else if (s.status === 'other') txt = S.user.role === 'teacher' ? s.team + ' · ' + s.name : '다른 팀 · ' + s.team;
+        else if (s.status === 'free' && S.user.role === 'teacher') txt = '비어 있음 · 눌러서 대리 예약';
+        out += '<button type="button" class="slot ' + s.status + '" data-d="' + di + '" data-i="' + x.i + '"' +
+          (s.status === 'closed' || s.status === 'holiday' ? ' aria-disabled="true"' : '') + '>' +
+          '<span class="pl">' + esc(s.place) + '</span><span class="st">' + esc(txt) + '</span></button>';
+      });
+    });
+    return out + '</div>';
+  }
+
+  function onSlot(e) {
+    var b = e.target.closest('.slot'); if (!b) return;
+    var day = S.week.days[+b.dataset.d], s = day.slots[+b.dataset.i];
+    var desc = day.label + ' ' + s.period + ' · ' + s.place + '\n' + s.time;
+    var isT = S.user.role === 'teacher';
+    if (s.status === 'closed') {
+      return dialog('예약 불가', '<p class="pre">지금은 예약·취소할 수 있는 기간이 아니에요.\n예약은 전주 토요일 08:00 ~ 일요일 18:00까지입니다.</p>', [{ label: '확인', v: 'ok', cls: 'pri' }]);
+    }
+    if (s.status === 'holiday') return toast('휴무일이라 예약할 수 없어요: ' + (day.holiday || ''));
+    if (s.status === 'free') return isT ? teacherBook(s, desc) : book(s, desc, null);
+    if (s.canCancel) return cancel(s, desc);
+    if (s.status === 'mine') return toast('예약·취소 가능 기간이 지났어요.');
+    if (s.status === 'team') return dialog('우리 팀 예약', '<p class="pre">' + esc(desc + '\n예약한 사람: ' + s.name) + '</p><p class="muted">본인이 한 예약만 취소할 수 있어요.</p>', [{ label: '확인', v: 'ok', cls: 'pri' }]);
+    return toast('이미 다른 팀이 예약한 자리예요.');
+  }
+
+  function book(s, desc, asId) {
+    return dialog('예약할까요?', '<p class="pre">' + esc(desc) + '</p>', [{ label: '아니요', v: 'no' }, { label: '예약하기', v: 'yes', cls: 'pri' }]).then(function (d) {
+      if (d.v !== 'yes') return;
+      return doBook(s, asId);
+    });
+  }
+  function doBook(s, asId) {
+    busy(true);
+    return api('bookSlot', s.date, s.place, s.period, asId).then(function (r) {
+      busy(false);
+      if (!r.ok) { bad(r, '예약 불가'); } else { toast('예약되었습니다 ✅'); }
+      if (S.token) renderBook();
+    });
+  }
+  function cancel(s, desc) {
+    return dialog('예약을 취소할까요?', '<p class="pre">' + esc(desc + (s.name ? '\n예약자: ' + s.name : '') + (s.team ? '\n팀: ' + s.team : '')) + '</p><p class="muted">일요일 18:00 전이라면 다시 예약할 수 있어요.</p>',
+      [{ label: '아니요', v: 'no' }, { label: '예약 취소', v: 'yes', cls: 'danger' }]).then(function (d) {
+      if (d.v !== 'yes') return;
+      busy(true);
+      return api('cancelRes', s.resId).then(function (r) {
+        busy(false);
+        if (!r.ok) bad(r, '취소 불가'); else toast('취소되었습니다');
+        if (S.token) { if (S.tab === 'mine') renderMine(); else renderBook(); }
+      });
+    });
+  }
+  function teacherBook(s, desc) {
+    var ready = S.students ? Promise.resolve({ ok: true, list: S.students }) : api('listStudents');
+    return ready.then(function (r) {
+      if (bad(r)) return;
+      S.students = r.list;
+      if (!r.list.length) return dialog('안내', '<p>[학생] 시트에 팀이 지정된 학생이 없습니다.</p>', [{ label: '확인', v: 'ok', cls: 'pri' }]);
+      var opts = r.list.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.team + ' · ' + x.name + ' (' + x.id + ')') + '</option>'; }).join('');
+      return dialog('대리 예약', '<p class="pre">' + esc(desc) + '</p><label for="stuSel" class="muted">예약할 학생(팀)</label><select id="stuSel">' + opts + '</select>' +
+        '<p class="muted" style="font-size:.85rem">교사는 예약 기간과 관계없이 예약할 수 있습니다. 팀 한도 규칙은 동일하게 적용됩니다.</p>',
+        [{ label: '닫기', v: 'no' }, { label: '예약하기', v: 'yes', cls: 'pri', collect: function (bg) { return $('#stuSel', bg).value; } }]).then(function (d) {
+        if (d.v === 'yes') return doBook(s, d.data);
+      });
+    });
+  }
+
+  // ---------- 카운트다운 ----------
+  function fmtRemain(ms) {
+    if (ms < 0) ms = 0;
+    var s = Math.floor(ms / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+    return (d ? d + '일 ' : '') + h + '시간 ' + m + '분 ' + sec + '초';
+  }
+  function startTick(isT) {
+    clearInterval(S.timer);
+    var w = S.week.window, serverState = w.state, mon = S.week.monday;
+    function upd() {
+      var now = Date.now() + S.offset;
+      var cur = now < w.openMs ? 'before' : (now < w.closeMs ? 'open' : 'closed');
+      var b = $('#banner'); if (!b) { clearInterval(S.timer); return; }
+      if (cur !== serverState && S.tab === 'book' && S.week.monday === mon) { clearInterval(S.timer); renderBook(); return; }
+      b.className = 'banner ' + cur;
+      var t = isT ? ' · 교사는 기간 외에도 예약·취소할 수 있어요' : '';
+      if (cur === 'before') b.innerHTML = '⏳ <b>예약 오픈까지 ' + fmtRemain(w.openMs - now) + '</b><span>오픈 ' + esc(w.openLabel) + ' ~ 마감 ' + esc(w.closeLabel) + t + '</span>';
+      else if (cur === 'open') b.innerHTML = '✅ <b>예약 가능 · 마감까지 ' + fmtRemain(w.closeMs - now) + '</b><span>마감 ' + esc(w.closeLabel) + ' (취소·재예약도 이때까지)' + t + '</span>';
+      else b.innerHTML = '🔒 <b>예약이 마감되었습니다</b><span>마감 ' + esc(w.closeLabel) + ' · 조회만 가능해요' + t + '</span>';
+    }
+    upd(); S.timer = setInterval(upd, 1000);
+  }
+
+  // ---------- 내 예약 ----------
+  function renderMine() {
+    loading();
+    api('getMine').then(function (r) {
+      if (bad(r)) return;
+      var h = '<h2 style="margin-bottom:12px">📋 내 예약</h2>';
+      if (!r.list.length) { $('#content').innerHTML = h + '<p class="empty-msg">최근 예약 내역이 없어요.</p>'; return; }
+      h += '<div class="card"><table class="list"><thead><tr><th>날짜</th><th>시간대</th><th>장소</th><th></th></tr></thead><tbody>' +
+        r.list.map(function (x, i) {
+          return '<tr><td>' + esc(x.label) + (x.past ? ' <span class="muted">(지남)</span>' : '') + '</td><td>' + esc(x.period) + ' <span class="muted">' + esc(x.time) + '</span></td><td>' + esc(x.place) + '</td><td>' +
+            (x.canCancel ? '<button class="btn sm danger" data-i="' + i + '" type="button">취소</button>' : '<span class="muted">취소 불가</span>') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+      $('#content').innerHTML = h;
+      $$('#content button[data-i]').forEach(function (b) {
+        b.onclick = function () {
+          var x = r.list[+b.dataset.i];
+          cancel({ resId: x.resId, name: '', team: '' }, x.label + ' ' + x.period + ' · ' + x.place + '\n' + x.time);
+        };
+      });
+    });
+  }
+
+  // ---------- 비밀번호 변경 ----------
+  function renderPw() {
+    $('#content').innerHTML = '<h2 style="margin-bottom:12px">🔑 비밀번호 변경</h2>' +
+      '<form class="card form" id="pwForm"><label for="pw0">현재 비밀번호</label><input id="pw0" type="password" autocomplete="current-password" required>' +
+      '<label for="pw1">새 비밀번호 (4자 이상)</label><input id="pw1" type="password" autocomplete="new-password" required minlength="4">' +
+      '<label for="pw2">새 비밀번호 확인</label><input id="pw2" type="password" autocomplete="new-password" required>' +
+      '<p class="err" id="pwMsg" role="alert"></p><button class="btn pri block" type="submit">변경하기</button></form>';
+    $('#pwForm').onsubmit = function (e) {
+      e.preventDefault();
+      if ($('#pw1').value !== $('#pw2').value) { $('#pwMsg').textContent = '새 비밀번호가 서로 다릅니다.'; return; }
+      busy(true);
+      api('changePassword', $('#pw0').value, $('#pw1').value).then(function (r) {
+        busy(false);
+        if (!r.ok) { $('#pwMsg').textContent = r.msg || ''; return; }
+        $('#pwForm').reset(); $('#pwMsg').textContent = ''; toast('비밀번호가 변경되었습니다 ✅');
+      });
+    };
+  }
+
+  // ---------- 휴무일 (교사) ----------
+  function renderHol() {
+    loading();
+    api('listHolidays').then(function (r) {
+      if (bad(r)) return;
+      var rows = r.list.length ? '<table class="list"><thead><tr><th>날짜</th><th>사유</th><th></th></tr></thead><tbody>' +
+        r.list.map(function (x, i) { return '<tr><td>' + esc(x.label) + ' <span class="muted">' + esc(x.date) + '</span></td><td>' + esc(x.reason) + '</td><td><button class="btn sm" data-i="' + i + '" type="button">삭제</button></td></tr>'; }).join('') + '</tbody></table>'
+        : '<p class="empty-msg">등록된 휴무일이 없어요.</p>';
+      $('#content').innerHTML = '<h2 style="margin-bottom:6px">🚫 휴무일 관리</h2><p class="muted" style="margin-top:0">시험, 행사, 방학 등 예약을 막을 날짜를 등록하세요. ([휴무일] 시트에서 직접 입력해도 됩니다)</p>' +
+        '<form class="card inline" id="holForm"><div><label for="hd">날짜</label><input id="hd" type="date" required></div><div><label for="hr">사유</label><input id="hr" type="text" placeholder="예: 중간고사" required></div><button class="btn pri" type="submit">등록</button></form>' +
+        '<div class="card" style="margin-top:12px">' + rows + '</div>';
+      $('#holForm').onsubmit = function (e) {
+        e.preventDefault(); busy(true);
+        api('setHoliday', $('#hd').value, $('#hr').value, false).then(function (x) { busy(false); if (!bad(x)) { toast('등록되었습니다'); renderHol(); } });
+      };
+      $$('#content button[data-i]').forEach(function (b) {
+        b.onclick = function () {
+          var x = r.list[+b.dataset.i]; busy(true);
+          api('setHoliday', x.date, '', true).then(function (y) { busy(false); if (!bad(y)) { toast('삭제되었습니다'); renderHol(); } });
+        };
+      });
+    });
+  }
+
+  // ---------- 교사: 예약 달력 출력 ----------
+  function renderReport() {
+    loading();
+    api('getReport', S.reportMonday).then(function (r) {
+      if (bad(r)) return;
+      S.report = r; S.reportMonday = r.monday;
+      var head = r.days.map(function (d) { return '<th scope="col">' + esc(d.label) + (d.holiday !== null ? '<br><small>' + esc(d.holiday) + '</small>' : '') + '</th>'; }).join('');
+      var body = r.rows.map(function (row) {
+        return '<tr><th class="rowh" scope="row"><b>' + esc(row.period) + '</b><br>' + esc(row.place) + '</th>' +
+          row.cells.map(function (c, i) {
+            if (r.days[i].holiday !== null) return '<td class="hol">휴무</td>';
+            return c.team ? '<td class="filled"><b>' + esc(c.team) + '</b><br>' + esc(c.name) + '<small>' + esc(c.time) + '</small></td>'
+              : '<td class="empty"><span>—</span><small>' + esc(c.time) + '</small></td>';
+          }).join('') + '</tr>';
+      }).join('');
+      var sum = r.summary.length ? '<table class="sum"><thead><tr><th>팀</th><th>점심</th><th>방과후</th><th>합계</th></tr></thead><tbody>' +
+        r.summary.map(function (x) { return '<tr><td>' + esc(x.team) + '</td><td>' + x.lunch + '</td><td>' + x.after + '</td><td><b>' + x.total + '</b></td></tr>'; }).join('') + '</tbody></table>' : '';
+      $('#content').innerHTML =
+        '<div class="tools no-print">' +
+        '<button class="btn sm" id="rPrev" type="button">◀ 이전 주</button><span class="range">' + esc(r.range) + '</span>' +
+        '<button class="btn sm" id="rNext" type="button">다음 주 ▶</button>' +
+        '<button class="btn sm ghost" id="rDef" type="button">📌 최근 마감된 주</button>' +
+        '<span style="flex:1"></span>' +
+        '<button class="btn pri" id="rPrint" type="button">🖨 인쇄 / PDF 저장</button>' +
+        '<button class="btn" id="rCsv" type="button">⬇ 엑셀(CSV)</button></div>' +
+        (r.windowClosed ? '' : '<div class="notice no-print">⚠️ 이 주의 예약은 아직 마감 전입니다 (마감 ' + esc(r.closeLabel) + '). 이후 변경될 수 있어요.</div>') +
+        '<section class="print-area"><h2>동아리실 · 요가실 예약 현황</h2><p class="prange">' + esc(r.rangeFull) + ' (월~금)</p>' +
+        '<table class="cal"><thead><tr><th scope="col">구분</th>' + head + '</tr></thead><tbody>' + body + '</tbody></table>' + sum +
+        '<p class="printed">출력: ' + esc(r.printedAt) + '</p></section>';
+      $('#rPrev').onclick = function () { S.reportMonday = addWeeks(S.reportMonday, -1); renderReport(); };
+      $('#rNext').onclick = function () { S.reportMonday = addWeeks(S.reportMonday, 1); renderReport(); };
+      $('#rDef').onclick = function () { call('restore', [S.token]).then(function (x) { if (x.ok) S.reportMonday = x.defaults.reportMonday; renderReport(); }); };
+      $('#rPrint').onclick = function () { window.print(); };
+      $('#rCsv').onclick = downloadCsv;
+    });
+  }
+
+  function downloadCsv() {
+    var r = S.report; if (!r) return;
+    var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; };
+    var lines = [['날짜', '요일', '장소', '시간대', '시간', '팀', '예약자', '아이디', '예약시각'].map(q).join(',')];
+    r.list.forEach(function (x) { lines.push([x.date, x.dow, x.place, x.period, x.time, x.team, x.name, x.uid, x.at].map(q).join(',')); });
+    var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = '예약현황_' + r.monday + '.csv';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+
+  // ---------- 시작 ----------
+  var tok = load('tok');
+  if (tok) {
+    S.token = tok; busy(true);
+    call('restore', [tok]).then(function (r) {
+      busy(false);
+      if (r.ok) enter(r); else { S.token = null; store('tok', null); }
+    });
+  }
+})();
+</script>

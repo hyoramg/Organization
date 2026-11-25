@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <?!= include('Style'); ?>
+</head>
+<body>
+  <div id="busy" class="busy no-print" hidden><div class="spin"></div></div>
+
+  <!-- 로그인 -->
+  <section id="loginView" class="login-wrap">
+    <form id="loginForm" class="card login" autocomplete="on">
+      <div class="logo">🏫</div>
+      <h1>동아리실 · 요가실 예약</h1>
+      <p class="sub">선생님이 알려준 아이디와 비밀번호로 로그인하세요.</p>
+      <label for="uid">아이디</label>
+      <input id="uid" name="username" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" required>
+      <label for="upw">비밀번호</label>
+      <input id="upw" name="password" type="password" autocomplete="current-password" required>
+      <p id="loginMsg" class="err" role="alert"></p>
+      <button class="btn pri block" type="submit">로그인</button>
+      <p class="hint">예약은 <b>전주 토요일 08:00 ~ 일요일 18:00</b>까지 (한국 시간)</p>
+    </form>
+  </section>
+
+  <!-- 메인 -->
+  <section id="mainView" hidden>
+    <header class="top no-print">
+      <div class="who">
+        <b id="whoName"></b>
+        <span id="whoChip" class="chip"></span>
+      </div>
+      <button id="logoutBtn" class="btn ghost sm" type="button">로그아웃</button>
+    </header>
+    <nav id="tabs" class="tabs no-print" role="tablist"></nav>
+    <main id="content" class="wrap"></main>
+  </section>
+
+  <div id="modalRoot"></div>
+  <div id="toast" class="toast no-print" hidden></div>
+
+  <?!= include('Script'); ?>
+</body>
+</html>
