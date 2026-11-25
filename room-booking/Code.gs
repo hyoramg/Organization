@@ -450,6 +450,14 @@ function changePassword(token, oldPw, newPw) {
 // ===================== 주간 조회 =====================
 function weekDates_(monday) { return [0, 1, 2, 3, 4].map(i => addDays_(monday, i)); }
 function periodIdx_(p) { return PERIODS.indexOf(p); }
+const TEAM_COLORS = 12;
+/** 팀 이름 -> 색 번호(0~11). [학생] 시트에 처음 나온 순서대로 배정되어 항상 같은 팀은 같은 색입니다. */
+function teamIndexMap_(extraTeams) {
+  const m = {}; let n = 0;
+  getUsers_().forEach(u => { if (u.role === 'student' && u.team && !(u.team in m)) m[u.team] = n++; });
+  (extraTeams || []).forEach(t => { if (t && !(t in m)) m[t] = n++; });
+  return m;
+}
 function listText_(arr) {
   return arr.slice().sort((a, b) => a.date.localeCompare(b.date) || periodIdx_(a.period) - periodIdx_(b.period))
     .map(r => '• ' + r.name + ' — ' + label_(r.date) + ' ' + r.period + ' ' + placeName_(r.place)).join('\n');
@@ -462,6 +470,7 @@ function getWeek(token, monday) {
     const settings = getSettings_();
     const isT = u.role === 'teacher', bookable = win.state === 'open' || isT;
     const all = getActiveRes_().filter(r => dates.indexOf(r.date) >= 0);
+    const tmap = isT ? teamIndexMap_(all.map(r => r.team)) : null;
 
     const days = dates.map(d => {
       const dow = dowOf_(d);
@@ -474,7 +483,7 @@ function getWeek(token, monday) {
             s.resId = r.id;
             if (!isT && r.uid === u.id) { s.status = 'mine'; s.name = r.name; s.team = r.team; }
             else if (!isT && u.team && r.team === u.team) { s.status = 'team'; s.name = r.name; s.team = r.team; }
-            else { s.status = 'other'; if (isT) { s.name = r.name; s.team = r.team; } }   // 학생에게는 다른 팀 이름을 보내지 않음
+            else { s.status = 'other'; if (isT) { s.name = r.name; s.team = r.team; s.ci = tmap[r.team] % TEAM_COLORS; } }   // 학생에게는 다른 팀 이름을 보내지 않음
             s.canCancel = isT || (r.uid === u.id && win.state === 'open');
           } else if (ph !== null) { s.status = 'holiday'; s.reason = ph; }
           else if (!bookable) s.status = 'closed';
@@ -594,7 +603,7 @@ function listStudents(token) {
     ok: true,
     list: getUsers_().filter(x => x.role === 'student' && x.team)
       .sort((a, b) => a.team.localeCompare(b.team, 'ko') || a.name.localeCompare(b.name, 'ko'))
-      .map(x => ({ id: x.id, name: x.name, team: x.team, label: x.team + ' ' + x.name }))
+      .map(x => ({ id: x.id, name: x.name, team: x.team, label: x.team + ' · ' + x.name }))
   }), ['teacher']);
 }
 
@@ -605,14 +614,18 @@ function getReport(token, monday) {
     monday = mondayOf_(normDate_(monday) || defaultReportMonday_());
     const dates = weekDates_(monday), hols = getHolidays_(), win = windowOf_(monday), places = activePlaces_();
     const all = getActiveRes_().filter(r => dates.indexOf(r.date) >= 0);
+    const tmap = teamIndexMap_(all.map(r => r.team));
     const rows = [];
     PERIODS.forEach(p => places.forEach(pl => {
+      const t1 = slotTime_(p, 1), t2 = slotTime_(p, 2);       // 월 기준 / 화 기준 (방과후는 요일별로 다름)
       rows.push({
         period: p, placeName: pl.name,
+        timeLines: t1 === t2 ? [t1] : [t1, '(화·목 ' + t2 + ')'],
         cells: dates.map(d => {
           const r = all.find(x => x.date === d && x.place === pl.id && x.period === p);
           return {
             time: slotTime_(p, dowOf_(d)), team: r ? r.team : null, name: r ? r.name : null, uid: r ? r.uid : null,
+            ci: r ? tmap[r.team] % TEAM_COLORS : null,
             holiday: holidayFor_(hols, d, p)
           };
         })
@@ -626,7 +639,7 @@ function getReport(token, monday) {
     const summary = Object.keys(teams).sort((a, b) => a.localeCompare(b, 'ko')).map(t => {
       const m = all.filter(r => r.team === t), c = {};
       PERIODS.forEach(p => { c[p] = m.filter(r => r.period === p).length; });
-      return { team: t, counts: c, total: m.length };
+      return { team: t, counts: c, total: m.length, ci: tmap[t] % TEAM_COLORS };
     });
     return {
       ok: true, monday: monday, range: label_(dates[0]) + ' ~ ' + label_(dates[4]),

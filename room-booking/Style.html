@@ -19,7 +19,10 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans KR','
 [hidden]{display:none!important}
 button,input,select{font:inherit;color:inherit}
 h1,h2,h3{margin:0;line-height:1.3}
-.wrap{max-width:1120px;margin:0 auto;padding:16px}
+.wrap{max-width:1280px;margin:0 auto;padding:16px}
+.center{max-width:720px;margin:0 auto}
+.center.narrow{max-width:460px}
+.center h2{text-align:center}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
 .pre{white-space:pre-line;margin:0}
 .muted{color:var(--muted)}
@@ -69,8 +72,8 @@ input[type=text],input[type=password],input[type=date],select{width:100%;padding
 /* 팀 패널 */
 .team{margin-bottom:12px}
 .team h3{font-size:1rem;margin-bottom:10px}
-.meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:10px}
-.meter .row{display:flex;justify-content:space-between;font-size:.9rem;margin-bottom:4px}
+.meters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:10px}
+.meter .row{display:flex;justify-content:space-between;gap:4px;font-size:.9rem;margin-bottom:4px;white-space:nowrap}
 .bar{height:10px;border-radius:99px;background:var(--other-bg);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--pri);border-radius:99px}
 .bar i.full{background:var(--danger)}
@@ -84,16 +87,34 @@ table.list small.tm{display:block;font-size:.72rem;color:var(--muted);line-heigh
 .me{font-weight:700;color:var(--pri)}
 
 /* 범례 */
-.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:.82rem;color:var(--muted);margin:4px 0 12px}
-.lg{display:inline-block;width:14px;height:14px;border-radius:4px;margin-right:4px;vertical-align:-2px;border:1.5px solid}
+.legend{display:flex;gap:10px;flex-wrap:nowrap;font-size:.82rem;color:var(--muted);margin:4px 0 12px}
+.legend span{display:inline-flex;align-items:center;white-space:nowrap}
+.lg{display:inline-block;flex:none;width:14px;height:14px;border-radius:4px;margin-right:4px;border:1.5px solid}
+.lg.tcs{background:linear-gradient(90deg,#fce7f3 0 33%,#e0f2fe 33% 66%,#fef9c3 66%);border-color:#cbd5e1}
 .lg.free{background:var(--free-bg);border-color:var(--free-line)}
 .lg.mine{background:var(--mine-bg);border-color:var(--mine-line)}
 .lg.team{background:var(--team-bg);border-color:var(--team-line)}
 .lg.other{background:var(--other-bg2);border-color:var(--other-line)}
 .lg.off{background:repeating-linear-gradient(135deg,var(--off-a) 0 4px,var(--off-b) 4px 8px);border:1.5px dashed var(--off-line)}
 
+/* 팀 색(0~11, 연두 계열은 마지막 번호) */
+.tc0{--tb:#fce7f3;--tl:#f9a8d4}
+.tc1{--tb:#e0f2fe;--tl:#7dd3fc}
+.tc2{--tb:#fef9c3;--tl:#fde047}
+.tc3{--tb:#ede9fe;--tl:#c4b5fd}
+.tc4{--tb:#ffedd5;--tl:#fdba74}
+.tc5{--tb:#e0e7ff;--tl:#a5b4fc}
+.tc6{--tb:#fae8ff;--tl:#f0abfc}
+.tc7{--tb:#f1e7d6;--tl:#d6bf9a}
+.tc8{--tb:#ffe4e6;--tl:#fda4af}
+.tc9{--tb:#ccfbf1;--tl:#5eead4}
+.tc10{--tb:#ecfccb;--tl:#bef264}
+.tc11{--tb:#dcfce7;--tl:#86efac}
+.tchip{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:6px;vertical-align:-1px;background:var(--tb);border:1px solid var(--tl);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+
 /* 요일 카드(시간표) */
 .days{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+@media (min-width:1000px){.days{grid-template-columns:repeat(5,minmax(0,1fr))}}
 .day{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;box-shadow:var(--shadow)}
 .day h3{display:flex;align-items:baseline;gap:6px;font-size:1.1rem;margin-bottom:8px}
 .day h3 small{color:var(--muted);font-weight:400;font-size:.85rem}
@@ -110,7 +131,10 @@ table.list small.tm{display:block;font-size:.72rem;color:var(--muted);line-heigh
 .slot.other{background:var(--other-bg2);border-color:var(--other-line);color:var(--other-ink);cursor:default}
 .slot.closed,.slot.holiday{background:repeating-linear-gradient(135deg,var(--off-a) 0 8px,var(--off-b) 8px 16px);border:1.5px dashed var(--off-line);color:var(--off-ink);cursor:not-allowed}
 .slot .st.sm{font-size:.76rem}
-.slot.tfree .st{font-size:.72rem;white-space:nowrap}
+.slot.tfree .st{font-size:.72rem}
+@media (min-width:1200px){.slot.tfree .st{white-space:nowrap}}
+/* 교사 화면: 예약된 칸은 팀별 파스텔 색 */
+.slot.other.tcx{background:var(--tb);border-color:var(--tl);color:#1e293b;cursor:pointer}
 
 /* 모달 / 토스트 */
 .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.55);display:grid;place-items:center;padding:16px;z-index:50}
@@ -118,6 +142,7 @@ table.list small.tm{display:block;font-size:.72rem;color:var(--muted);line-heigh
 .modal h2{font-size:1.15rem;margin-bottom:10px}
 .modal.error h2{color:var(--danger)}
 .modal .body{margin-bottom:16px}
+.modal .fld{display:block;margin:16px 0 8px;font-size:.9rem;color:var(--muted)}
 .modal .acts{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:999px;z-index:60;font-size:.95rem}
 .busy{position:fixed;inset:0;background:rgba(0,0,0,.2);display:grid;place-items:center;z-index:70}
@@ -126,7 +151,7 @@ table.list small.tm{display:block;font-size:.72rem;color:var(--muted);line-heigh
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:3s}}
 
 /* 폼 */
-.form{max-width:420px}
+.form{max-width:none}
 .form label{display:block;font-size:.88rem;color:var(--muted);margin:12px 0 4px}
 .inline{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
 .inline>div{flex:1;min-width:130px}
@@ -141,12 +166,13 @@ table.list small.tm{display:block;font-size:.72rem;color:var(--muted);line-heigh
 table.cal{width:100%;border-collapse:collapse;table-layout:fixed;font-size:.95rem}
 table.cal th,table.cal td{border:1px solid var(--line);padding:8px;vertical-align:top;text-align:center}
 table.cal thead th{background:var(--pri-soft);color:var(--ink)}
-table.cal th.rowh{background:var(--other-bg);width:96px}
-table.cal td small{display:block;color:var(--muted);font-size:.74rem;margin-top:2px}
-table.cal td.filled{background:var(--team-bg);color:var(--ink)}
-table.cal td.empty span{color:var(--muted)}
+table.cal th.rowh{background:var(--other-bg);width:104px;font-weight:400}
+table.cal th.rowh b{font-size:1rem}
+table.cal th.rowh small{display:block;margin-top:3px;font-size:.72rem;color:var(--muted);line-height:1.25}
+table.cal td small.hn{display:block;color:var(--muted);font-size:.74rem;margin-top:2px}
+table.cal td.filled{background:var(--tb);color:#1e293b}
+table.cal td.empty{color:var(--muted)}
 table.cal td.hol{background:var(--off-a);color:var(--off-ink)}
-.dm,.dd{display:inline}
 table.sum{width:100%;border-collapse:collapse;margin-top:16px;font-size:.9rem}
 table.sum th,table.sum td{border:1px solid var(--line);padding:6px 8px;text-align:center}
 table.sum th{background:var(--other-bg)}
@@ -159,13 +185,17 @@ table.sum th{background:var(--other-bg)}
   .wrap{padding:10px}
   .print-area{padding:8px}
   .print-area h2{font-size:1.05rem}
-  table.cal{font-size:.74rem}
-  table.cal th,table.cal td{padding:5px 2px}
-  table.cal th.rowh{width:54px}
-  table.cal td small{font-size:.62rem}
+  table.cal{font-size:.76rem}
+  table.cal th,table.cal td{padding:6px 2px}
+  table.cal th.rowh{width:68px}
+  table.cal th.rowh b{font-size:.8rem}
+  table.cal th.rowh small{font-size:.58rem}
   .dm,.dd{display:block}
   .tools .range{flex-basis:100%;order:-1;min-width:0}
-  table.cal td small{font-size:.58rem;line-height:1.15}
+  .meters{gap:8px}
+  .meter .row{font-size:.78rem}
+  .legend{gap:6px;font-size:clamp(.56rem,2.8vw,.82rem)}
+  .lg{width:11px;height:11px;margin-right:3px}
 }
 
 @media print{
@@ -174,11 +204,10 @@ table.sum th{background:var(--other-bg)}
   .no-print{display:none!important}
   .wrap{padding:0;max-width:none}
   .print-area{border:0;padding:0;box-shadow:none;background:#fff;color:#000}
-  .dm,.dd{display:inline!important}
   table.cal{font-size:.95rem}
   table.cal th,table.cal td,table.sum th,table.sum td{border:1px solid #000;color:#000}
   table.cal thead th,table.cal th.rowh,table.sum th{background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  table.cal td.filled{background:#e6f1ff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  table.cal td small,.print-area .prange,.printed{color:#333}
+  table.cal td.filled{background:var(--tb)!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  table.cal th.rowh small,table.cal td small,.print-area .prange,.printed{color:#333}
 }
 </style>
