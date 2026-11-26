@@ -7,7 +7,7 @@
 
 // ===================== 고정 설정 =====================
 const TZ = 'Asia/Seoul';
-const SH = { USERS: '학생', RES: '예약', HOL: '휴무일', LOG: '로그', PLACE: '장소', CFG: '설정' };
+const SH = { USERS: '학생', RES: '예약', HOL: '휴무일', LOG: '로그', PLACE: '장소', CFG: '설정', CHK: '퇴실확인' };
 const PERIODS = ['아침', '점심', '방과후'];
 const OPEN_HOUR = 8;                        // 전주 토요일 08:00 오픈
 const CLOSE_HOUR = 18;                      // 전주 일요일 18:00 마감
@@ -18,12 +18,18 @@ const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 const RES_HEAD = ['예약ID', '날짜', '장소ID', '시간대', '아이디', '이름', '팀명', '예약시각', '상태', '취소시각', '장소명(자동)'];
 const DEFAULT_TITLE = '동아리실·요가실 예약';
 const DEFAULT_PLACES = ['동아리실', '요가실'];
-const CFG_ROWS = [
-  ['사이트제목', DEFAULT_TITLE, '로그인 화면, 상단, 브라우저 탭에 표시되는 제목'],
-  ['아침 최대횟수', '2', '한 팀이 한 주에 예약할 수 있는 아침(08:00~08:20) 최대 횟수'],
-  ['점심 최대횟수', '2', '한 팀이 한 주에 예약할 수 있는 점심(12:30~13:10) 최대 횟수'],
-  ['방과후 최대횟수', '2', '한 팀이 한 주에 예약할 수 있는 방과후 최대 횟수']
-];
+function cfgRows_() {
+  return [
+    ['사이트제목', DEFAULT_TITLE, '로그인 화면, 상단, 브라우저 탭에 표시되는 제목'],
+    ['아침 최대횟수', '2', '한 팀이 한 주에 예약할 수 있는 아침(08:00~08:20) 최대 횟수'],
+    ['점심 최대횟수', '2', '한 팀이 한 주에 예약할 수 있는 점심(12:30~13:10) 최대 횟수'],
+    ['방과후 최대횟수', '2', '한 팀이 한 주에 예약할 수 있는 방과후 최대 횟수'],
+    ['아침 사진마감', '08:40', '아침 예약의 퇴실 확인 사진 제출 마감 시각 (당일, 24시간제 HH:MM)'],
+    ['방과후 사진마감', '16:50', '방과후 예약의 퇴실 확인 사진 제출 마감 시각 (당일, 24시간제 HH:MM)'],
+    ['사진 촬영 방식', '라이브카메라만', '라이브카메라만 = 앱 안에서 실시간 촬영만 허용 / 카메라앱허용 = 라이브 카메라가 안 될 때 휴대폰 카메라 앱 촬영도 허용'],
+    ['퇴실확인 시작일', addDays_(mondayOf_(todayKst_()), 7), '이 날짜 이후 예약부터 퇴실 확인이 필요합니다. 비우면 퇴실 확인 기능이 꺼집니다. (YYYY-MM-DD)']
+  ];
+}
 
 class UserError extends Error {
   constructor(msg, title) { super(msg); this.userMsg = msg; this.title = title || '알림'; }
@@ -92,7 +98,7 @@ function setup() {
   const c = mk(SH.CFG, ['항목', '값', '설명']);
   c.sh.getRange('A:B').setNumberFormat('@');
   const have = c.sh.getLastRow() >= 2 ? c.sh.getRange(2, 1, c.sh.getLastRow() - 1, 1).getDisplayValues().map(r => String(r[0]).trim()) : [];
-  CFG_ROWS.forEach(r => { if (have.indexOf(r[0]) < 0) c.sh.getRange(c.sh.getLastRow() + 1, 1, 1, 3).setNumberFormat('@').setValues([r]); });
+  cfgRows_().forEach(r => { if (have.indexOf(r[0]) < 0) c.sh.getRange(c.sh.getLastRow() + 1, 1, 1, 3).setNumberFormat('@').setValues([r]); });
   c.sh.setColumnWidth(1, 140); c.sh.setColumnWidth(2, 220); c.sh.setColumnWidth(3, 420);
 
   // 예약
@@ -112,6 +118,20 @@ function setup() {
     SpreadsheetApp.newDataValidation().requireValueInList(['전체'].concat(PERIODS), true).build());
   h.sh.setColumnWidths(1, 3, 150);
 
+  // 퇴실확인 (사진 제출 기록)
+  const k = mk(SH.CHK, ['예약ID', '날짜', '시간대', '장소ID', '팀명', '제출자ID', '제출자', '제출시각', '촬영방식', '사진링크', '파일ID', '면제', '메모', '장소명(자동)']);
+  k.sh.getRange('A:M').setNumberFormat('@');
+  k.sh.setColumnWidths(1, 14, 110);
+  const cfgSh = ss.getSheetByName(SH.CFG);
+  if (cfgSh && cfgSh.getLastRow() >= 2) {
+    cfgSh.getRange(2, 1, cfgSh.getLastRow() - 1, 1).getDisplayValues().forEach((r, i) => {
+      if (String(r[0]).trim() === '사진 촬영 방식') {
+        cfgSh.getRange(i + 2, 2).setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['라이브카메라만', '카메라앱허용'], true).build());
+      }
+    });
+  }
+  getPhotoFolder_();   // 구글 드라이브 사진 폴더 생성 (처음에는 권한 승인 창이 뜹니다)
+
   // 로그
   const l = mk(SH.LOG, ['시각', '아이디', '동작', '내용']);
   l.sh.getRange('A:A').setNumberFormat('@');
@@ -122,7 +142,8 @@ function setup() {
   SpreadsheetApp.getUi().alert('초기 설정이 끝났습니다.\n\n' +
     '• [학생] 시트: 아이디(본명)·비밀번호·이름·팀명·역할(학생/매니저/학생+매니저/교사)\n' +
     '• [장소] 시트: 장소 추가/이름 변경 (번호는 건드리지 마세요)\n' +
-    '• [설정] 시트: 사이트 제목, 시간대별 최대 횟수\n' +
+    '• [설정] 시트: 사이트 제목, 시간대별 최대 횟수, 사진 마감 시각, 촬영 방식, 퇴실확인 시작일\n' +
+    '• [퇴실확인] 시트: 사진 제출 기록 (자동)\n' +
     '• [휴무일] 시트: 날짜, 사유, 시간대(비우면 하루 전체)');
 }
 
@@ -223,13 +244,18 @@ function sheet_(name) {
 var SETTINGS_MEMO = null;
 function getSettings_() {
   if (SETTINGS_MEMO) return SETTINGS_MEMO;
-  const s = { title: DEFAULT_TITLE, limits: { '아침': 2, '점심': 2, '방과후': 2 } };
+  const s = { title: DEFAULT_TITLE, limits: { '아침': 2, '점심': 2, '방과후': 2 },
+    deadline: { '아침': { h: 8, m: 40 }, '방과후': { h: 16, m: 50 } }, cam: 'live', checkoutStart: '' };
   try {
     const sh = ss_().getSheetByName(SH.CFG);
     if (sh && sh.getLastRow() >= 2) {
       sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues().forEach(r => {
         const k = String(r[0]).trim(), v = String(r[1]).trim();
         if (k === '사이트제목') { if (v) s.title = v; return; }
+        if (k === '사진 촬영 방식') { s.cam = v.indexOf('앱') >= 0 ? 'app' : 'live'; return; }
+        if (k === '퇴실확인 시작일') { s.checkoutStart = normDate_(v); return; }
+        const dm = /^(아침|방과후) 사진마감$/.exec(k);
+        if (dm) { const t = hm_(v); if (t && t.h < 24 && t.m < 60) s.deadline[dm[1]] = t; return; }
         PERIODS.forEach(p => {
           if (k === p + ' 최대횟수') { const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) s.limits[p] = n; }
         });
@@ -505,10 +531,14 @@ function getWeek(token, monday) {
           .map(r => ({ label: label_(r.date), period: r.period, placeName: placeName_(r.place), time: slotTime_(r.period, dowOf_(r.date)), name: r.name, mine: r.uid === u.id }))
       };
     }
+    if (team) {
+      const viol = u.team ? weekViolations_(u.team, addDays_(monday, -7)) : [];
+      team.block = { blocked: viol.length > 0, list: viol.map(v => ({ label: v.label, period: v.period, placeName: v.placeName })) };
+    }
     return {
       ok: true, monday: monday, range: label_(dates[0]) + ' ~ ' + label_(dates[4]),
       days: days, team: team, bookable: bookable, isTeacher: isT,
-      window: win, nowMs: Date.now()
+      window: win, nowMs: Date.now(), check: checkInfo_()
     };
   }, ['teacher', 'student']);
 }
@@ -553,6 +583,13 @@ function bookSlot(token, date, place, period, asId) {
       if (win.state === 'closed') throw new UserError('예약이 마감되었습니다.\n마감: ' + win.closeLabel, '예약 불가');
     }
     const limit = getSettings_().limits[period];
+    if (!isT) {                                    // 지난주 퇴실 확인 미제출 팀은 이번 주 예약 불가
+      const viol = weekViolations_(who.team, addDays_(monday, -7));
+      if (viol.length) {
+        throw new UserError(who.team + ' 팀은 지난주 퇴실 확인 사진을 제출하지 않아 이번 예약 기간에는 예약할 수 없습니다.\n\n[미제출 내역]\n' +
+          viol.map(v => '• ' + v.label + ' ' + v.period + ' ' + v.placeName).join('\n') + '\n\n선생님께 문의하세요.', '예약 불가');
+      }
+    }
 
     return withLock_(() => {
       const all = getActiveRes_(), dates = weekDates_(monday);
@@ -674,6 +711,184 @@ function setHoliday(token, date, reason, period, remove) {
       sh.getRange(sh.getLastRow() + 1, 1, 1, 3).setNumberFormat('@').setValues([[date, String(reason || '휴무'), period]]);
     }
     log_(u.id, remove ? '휴무일삭제' : '휴무일등록', date + ' ' + period + ' ' + (reason || ''));
+    return { ok: true };
+  }), ['teacher']);
+}
+
+
+// ===================== 퇴실 확인 (아침·방과후 사진 제출) =====================
+function needsCheckout_(period) { return period === '아침' || period === '방과후'; }
+function hm_(s) { const m = /^(\d{1,2}):(\d{2})$/.exec(String(s).trim()); return m ? { h: +m[1], m: +m[2] } : null; }
+function kstDateHM_(ymd, h, m) { return new Date(ymd + 'T' + pad_(h) + ':' + pad_(m) + ':00+09:00'); }
+
+/** 안내문에 쓸 마감 시각 정보 */
+function checkInfo_() {
+  const st = getSettings_();
+  const f = t => pad_(t.h) + ':' + pad_(t.m);
+  return { enabled: !!st.checkoutStart, start: st.checkoutStart, cam: st.cam,
+    deadlines: { '아침': f(st.deadline['아침']), '방과후': f(st.deadline['방과후']) } };
+}
+/** 제출 가능 시간: 예약한 시간 시작 ~ 당일 마감 */
+function checkoutWindow_(date, period) {
+  const startStr = slotTime_(period, dowOf_(date)).split('~')[0], s = hm_(startStr), dl = getSettings_().deadline[period];
+  return { start: kstDateHM_(date, s.h, s.m), end: kstDateHM_(date, dl.h, dl.m), startLabel: startStr, endLabel: pad_(dl.h) + ':' + pad_(dl.m) };
+}
+function placeFormulaChk_(row) {
+  return "=IFERROR(VLOOKUP(D" + row + ",'" + SH.PLACE + "'!A:B,2,FALSE),D" + row + ")";
+}
+function getCheckoutRows_() {
+  const sh = ss_().getSheetByName(SH.CHK), map = {};
+  if (!sh || sh.getLastRow() < 2) return map;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues().forEach((r, i) => {
+    if (!r[0]) return;
+    map[r[0]] = { row: i + 2, resId: r[0], date: normDate_(r[1]), period: r[2], place: r[3], team: r[4], uid: r[5], name: r[6],
+      at: r[7], method: r[8], link: r[9], fileId: r[10], exempt: String(r[11]).trim() !== '', memo: r[12] };
+  });
+  return map;
+}
+function getPhotoFolder_() {
+  const p = PropertiesService.getScriptProperties(), id = p.getProperty('PHOTO_FOLDER');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) { /* 폴더가 없으면 새로 만듦 */ } }
+  const f = DriveApp.createFolder('퇴실확인 사진 (' + getSettings_().title + ')');
+  p.setProperty('PHOTO_FOLDER', f.getId());
+  return f;
+}
+
+/** 예약 1건의 퇴실 확인 상태: wait(시작 전) / open(제출 가능) / done / late(미제출=위반) / excused(면제) */
+function checkoutStatus_(r, sub, hols, now) {
+  const w = checkoutWindow_(r.date, r.period);
+  const base = {
+    resId: r.id, date: r.date, label: label_(r.date), period: r.period, place: r.place, placeName: placeName_(r.place),
+    time: slotTime_(r.period, dowOf_(r.date)), team: r.team, reserver: r.name,
+    startLabel: w.startLabel, endLabel: w.endLabel, startMs: w.start.getTime(), endMs: w.end.getTime(),
+    st: '', by: '', at: '', method: '', reason: '', hasPhoto: false
+  };
+  if (sub && sub.fileId) { base.st = 'done'; base.by = sub.name; base.at = sub.at; base.method = sub.method; base.hasPhoto = true; return base; }
+  if (sub && sub.exempt) { base.st = 'excused'; base.reason = sub.memo || '교사 면제'; return base; }
+  const hol = holidayFor_(hols, r.date, r.period);
+  if (hol !== null) { base.st = 'excused'; base.reason = '휴무일 (' + hol + ')'; return base; }
+  const t = now.getTime();
+  base.st = t < w.start.getTime() ? 'wait' : (t <= w.end.getTime() ? 'open' : 'late');
+  return base;
+}
+function sortItems_(a, b) { return a.date.localeCompare(b.date) || periodIdx_(a.period) - periodIdx_(b.period) || a.placeName.localeCompare(b.placeName, 'ko'); }
+/** 기간(dates) 안에서 퇴실 확인이 필요한 예약들의 상태 (team 이 비어 있으면 전체 팀) */
+function checkoutItems_(team, dates) {
+  const start = getSettings_().checkoutStart;
+  if (!start) return [];
+  const subs = getCheckoutRows_(), hols = getHolidays_(), now = new Date();
+  return getActiveRes_().filter(r => (!team || r.team === team) && dates.indexOf(r.date) >= 0 && r.date >= start && needsCheckout_(r.period))
+    .map(r => checkoutStatus_(r, subs[r.id], hols, now)).sort(sortItems_);
+}
+function weekViolations_(team, monday) {
+  if (!team) return [];
+  return checkoutItems_(team, weekDates_(monday)).filter(x => x.st === 'late');
+}
+function pubItem_(x) {
+  return { resId: x.resId, date: x.date, label: x.label, period: x.period, placeName: x.placeName, time: x.time, team: x.team, reserver: x.reserver,
+    startLabel: x.startLabel, endLabel: x.endLabel, startMs: x.startMs, endMs: x.endMs, st: x.st, by: x.by, at: x.at, method: x.method, reason: x.reason, hasPhoto: x.hasPhoto };
+}
+
+/** 학생: 우리 팀의 아침·방과후 예약과 제출 상태 */
+function getCheckout(token, monday) {
+  return api_(token, u => {
+    if (!u.team) throw new UserError('팀이 지정되지 않았습니다. 선생님께 문의하세요.');
+    monday = mondayOf_(normDate_(monday) || todayKst_());
+    const dates = weekDates_(monday), items = checkoutItems_(u.team, dates);
+    return {
+      ok: true, monday: monday, range: label_(dates[0]) + ' ~ ' + label_(dates[4]), team: u.team,
+      items: items.map(pubItem_), nextBlock: items.filter(x => x.st === 'late').map(pubItem_),
+      check: checkInfo_(), nowMs: Date.now()
+    };
+  }, ['student']);
+}
+
+/** 학생: 퇴실 확인 사진 제출 (우리 팀 예약이면 팀원 누구나 가능) */
+function submitCheckout(token, resId, photo, meta) {
+  return api_(token, u => {
+    const settings = getSettings_();
+    if (!settings.checkoutStart) throw new UserError('퇴실 확인 기능이 꺼져 있습니다.');
+    meta = meta || {}; const ck = meta.checks || {};
+    if (!(ck.light && ck.heat && ck.lock)) throw new UserError('전등 OFF, 난방 OFF, 문단속을 모두 확인하고 체크해 주세요.', '제출 불가');
+    const method = meta.method === 'live' ? 'live' : 'app';
+    if (settings.cam === 'live' && method !== 'live') throw new UserError('이 앱에서는 앱 안의 카메라로 실시간 촬영한 사진만 제출할 수 있습니다.', '제출 불가');
+    if (method === 'app') {
+      const age = Date.now() - Number(meta.lastModified || 0);
+      if (!meta.lastModified || age > 10 * 60 * 1000 || age < -5 * 60 * 1000) throw new UserError('방금 찍은 사진만 제출할 수 있어요. 카메라로 다시 촬영해 주세요.', '제출 불가');
+    }
+    const bytes = Utilities.base64Decode(String(photo || '').replace(/^data:image\/jpeg;base64,/, ''));
+    if (bytes.length < 5000 || bytes.length > 4 * 1024 * 1024 || (bytes[0] & 255) !== 0xFF || (bytes[1] & 255) !== 0xD8) {
+      throw new UserError('사진을 확인할 수 없습니다. 다시 촬영해 주세요.', '제출 불가');
+    }
+    return withLock_(() => {
+      const res = getActiveRes_().find(x => x.id === resId);
+      if (!res) throw new UserError('예약을 찾을 수 없습니다.');
+      if (res.team !== u.team) throw new UserError('우리 팀의 예약만 제출할 수 있어요.', '제출 불가');
+      if (!needsCheckout_(res.period)) throw new UserError('점심시간은 퇴실 확인 사진을 내지 않아도 돼요.');
+      if (res.date < settings.checkoutStart) throw new UserError('이 예약은 퇴실 확인 대상이 아닙니다.');
+      const subs = getCheckoutRows_(), old = subs[resId];
+      if (old && old.fileId) throw new UserError('이미 제출된 예약입니다. (' + old.name + ', ' + old.at + ')', '제출 불가');
+      const w = checkoutWindow_(res.date, res.period), now = Date.now();
+      if (now < w.start.getTime()) throw new UserError('아직 제출 시간이 아닙니다.\n제출 가능: ' + label_(res.date) + ' ' + w.startLabel + ' ~ ' + w.endLabel, '제출 불가');
+      if (now > w.end.getTime()) throw new UserError('제출 시간이 지났습니다. (마감 ' + w.endLabel + ')\n선생님께 문의하세요.', '제출 불가');
+      const stamp = nowStamp_();
+      const fname = [res.date, res.period, placeName_(res.place), res.team, u.name, stamp.slice(11, 16).replace(':', '')].join('_').replace(/[\\/:*?"<>|]/g, '') + '.jpg';
+      const file = getPhotoFolder_().createFile(Utilities.newBlob(bytes, 'image/jpeg', fname));
+      const sh = sheet_(SH.CHK), row = old ? old.row : sh.getLastRow() + 1;
+      sh.getRange(row, 1, 1, 13).setNumberFormat('@').setValues([[res.id, res.date, res.period, res.place, res.team, u.id, u.name, stamp, method, file.getUrl(), file.getId(), '', old ? old.memo : '']]);
+      sh.getRange(row, 14).setFormula(placeFormulaChk_(row));
+      log_(u.id, '퇴실확인제출', res.team + ' ' + res.date + ' ' + res.period + ' ' + placeName_(res.place) + ' (' + method + ')');
+      return { ok: true, at: stamp };
+    });
+  }, ['student']);
+}
+
+/** 교사: 한 주의 모든 팀 퇴실 확인 현황 */
+function getCheckoutAdmin(token, monday) {
+  return api_(token, () => {
+    monday = mondayOf_(normDate_(monday) || todayKst_());
+    const dates = weekDates_(monday), items = checkoutItems_('', dates);
+    const teams = {};
+    items.forEach(x => {
+      const t = teams[x.team] = teams[x.team] || { team: x.team, total: 0, done: 0, late: 0, excused: 0 };
+      t.total++; if (x.st === 'done') t.done++; else if (x.st === 'late') t.late++; else if (x.st === 'excused') t.excused++;
+    });
+    return {
+      ok: true, monday: monday, range: label_(dates[0]) + ' ~ ' + label_(dates[4]),
+      items: items.map(pubItem_), teams: Object.keys(teams).sort((a, b) => a.localeCompare(b, 'ko')).map(k => teams[k]),
+      blockedTeams: Object.keys(teams).filter(k => teams[k].late > 0).sort((a, b) => a.localeCompare(b, 'ko')),
+      nextWeekLabel: label_(addDays_(monday, 7)), check: checkInfo_(), nowMs: Date.now()
+    };
+  }, ['teacher']);
+}
+
+/** 교사: 제출된 사진 보기 */
+function getPhoto(token, resId) {
+  return api_(token, () => {
+    const sub = getCheckoutRows_()[resId];
+    if (!sub || !sub.fileId) throw new UserError('제출된 사진이 없습니다.');
+    const blob = DriveApp.getFileById(sub.fileId).getBlob();
+    return { ok: true, dataUrl: 'data:image/jpeg;base64,' + Utilities.base64Encode(blob.getBytes()), by: sub.name, at: sub.at, method: sub.method, link: sub.link };
+  }, ['teacher']);
+}
+
+/** 교사: 미제출 면제(해제) */
+function setExempt(token, resId, on, memo) {
+  return api_(token, u => withLock_(() => {
+    const res = getRes_().find(x => x.id === resId);
+    if (!res) throw new UserError('예약을 찾을 수 없습니다.');
+    const sh = sheet_(SH.CHK), old = getCheckoutRows_()[resId];
+    if (on) {
+      if (old && old.fileId) throw new UserError('이미 사진이 제출된 예약입니다.');
+      const row = old ? old.row : sh.getLastRow() + 1;
+      sh.getRange(row, 1, 1, 13).setNumberFormat('@').setValues([[res.id, res.date, res.period, res.place, res.team, '', '', '', '', '', '', '면제', String(memo || '교사 면제')]]);
+      sh.getRange(row, 14).setFormula(placeFormulaChk_(row));
+    } else if (old && !old.fileId) {
+      sh.deleteRow(old.row);
+    } else if (old) {
+      sh.getRange(old.row, 12, 1, 2).setNumberFormat('@').setValues([['', '']]);
+    }
+    log_(u.id, on ? '퇴실면제' : '퇴실면제해제', res.team + ' ' + res.date + ' ' + res.period);
     return { ok: true };
   }), ['teacher']);
 }

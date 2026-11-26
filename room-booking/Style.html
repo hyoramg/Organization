@@ -187,6 +187,36 @@ table.sum th{background:var(--other-bg)}
 .empty-msg{text-align:center;color:var(--muted);padding:24px}
 
 /* 모바일: 달력 표가 화면에 들어오도록 날짜를 두 줄(11/ 위, 23(월) 아래)로 */
+/* 퇴실 확인 */
+.center.wide{max-width:860px}
+.chknotice{margin-bottom:12px;background:#fffbeb;border-color:#fcd34d;color:#78350f;font-size:.9rem}
+.chknotice ul{margin:6px 0 0;padding-left:18px}
+.chknotice li{margin:3px 0}
+.chknotice li.warn{color:#b91c1c}
+.blockbar{background:#fee2e2;border:1px solid #f87171;color:#991b1b;border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;font-size:.92rem}
+.blockbar span{font-size:.82rem}
+.chk-card{padding:6px 12px}
+.chk-item{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px 4px;border-top:1px solid var(--line)}
+.chk-item:first-child{border-top:0}
+.chk-item .l{display:flex;flex-direction:column;gap:2px;min-width:0}
+.chk-item .l small{color:var(--muted);font-size:.8rem}
+.chk-item .stt{font-size:.88rem;margin-top:2px}
+.chk-item.st-done .stt{color:var(--free-ink)}
+.chk-item.st-late .stt{color:var(--off-ink);font-weight:700}
+.chk-item.st-open .stt{color:var(--pri);font-weight:700}
+.chk-item .btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.chk-item .btn{white-space:nowrap;flex:none}
+.late-n{color:var(--danger);font-weight:700}
+.chk-list{display:flex;flex-direction:column;gap:6px;margin:8px 0 12px}
+.chk-list label{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;min-height:46px;font-size:1rem;cursor:pointer}
+.chk-list input{width:22px;height:22px;flex:none}
+.cam-modal{max-width:520px}
+.cam-sub{margin:0 0 8px;font-size:.88rem}
+.cam-view{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3}
+.cam-view video,.cam-view img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.cam-msg{font-size:.85rem;color:var(--muted);margin:8px 0;min-height:1.3em;white-space:pre-line}
+img.photo{width:100%;border-radius:10px;display:block}
+
 @media (max-width:640px){
   .wrap{padding:10px}
   .print-area{padding:8px}

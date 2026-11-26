@@ -8,7 +8,7 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   };
-  var S = { token: null, user: null, tab: null, bookMonday: null, reportMonday: null, week: null, report: null, students: null, timer: null, offset: 0 };
+  var S = { chkMonday: null, token: null, user: null, tab: null, bookMonday: null, reportMonday: null, week: null, report: null, students: null, timer: null, offset: 0 };
 
   function store(k, v) { try { if (v == null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) {} }
   function load(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
@@ -90,9 +90,9 @@
     if (showDialog && msg) dialog('로그아웃됨', '<p>' + esc(msg) + '</p>', [{ label: '확인', v: 'ok', cls: 'pri' }]);
   }
   function tabsFor(u) {
-    if (u.role === 'teacher') return [['report', '📅 예약 달력 출력'], ['book', '🛠 예약 관리'], ['hol', '🚫 휴무일'], ['pw', '🔑 비밀번호']];
+    if (u.role === 'teacher') return [['report', '📅 예약 달력 출력'], ['book', '🛠 예약 관리'], ['chk', '📷 퇴실 확인'], ['hol', '🚫 휴무일'], ['pw', '🔑 비밀번호']];
     if (u.role === 'manager') return [['report', '📅 예약 달력'], ['pw', '🔑 비밀번호']];
-    var t = [['book', '📝 예약하기'], ['mine', '📋 내 예약']];
+    var t = [['book', '📝 예약하기'], ['mine', '📋 내 예약'], ['chk', '📷 퇴실 확인']];
     if (u.report) t.push(['report', '📅 예약 달력']);
     t.push(['pw', '🔑 비밀번호']);
     return t;
@@ -112,7 +112,7 @@
   function go(tab) {
     S.tab = tab; clearInterval(S.timer);
     $$('#tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === tab); b.setAttribute('aria-selected', b.dataset.tab === tab); });
-    ({ book: renderBook, mine: renderMine, pw: renderPw, report: renderReport, hol: renderHol })[tab]();
+    ({ book: renderBook, mine: renderMine, pw: renderPw, report: renderReport, hol: renderHol, chk: renderChk })[tab]();
   }
   function loading() { $('#content').innerHTML = '<p class="empty-msg">불러오는 중…</p>'; }
   function addWeeks(ymd, n) {
@@ -133,7 +133,9 @@
         '<button class="btn sm" id="wNext" type="button">다음 주 ▶</button>' +
         '<button class="btn sm ghost" id="wDef" type="button">예약 대상 주로</button></div>' +
         '<div class="banner" id="banner" role="status"></div>' +
+        (r.team && r.team.block && r.team.block.blocked ? blockBar(r.team.block) : '') +
         (r.team ? teamPanel(r.team) : '') +
+        (r.team ? checkNotice(r.check) : '') +
         (isT()
           ? '<div class="legend no-print"><span><i class="lg free"></i>비어 있음</span><span><i class="lg tcs"></i>예약됨 (팀별 색)</span><span><i class="lg hol"></i>휴무</span></div>'
           : '<div class="legend no-print"><span><i class="lg free"></i>예약 가능</span><span><i class="lg mine"></i>내 예약</span><span><i class="lg team"></i>우리 팀</span><span><i class="lg other"></i>다른 팀</span><span><i class="lg off"></i>예약 불가</span><span><i class="lg hol"></i>휴무</span></div>') +
@@ -398,6 +400,238 @@
     a.href = URL.createObjectURL(blob); a.download = '예약현황_' + r.monday + '.csv';
     document.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  }
+
+  // ---------- 퇴실 확인 (아침·방과후 사진 제출) ----------
+  function checkNotice(ck) {
+    if (!ck || !ck.enabled) return '';
+    return '<section class="card chknotice no-print"><b>📷 퇴실 확인 안내</b><ul>' +
+      '<li>아침·방과후 예약은 사용이 끝나면 <b>전등 OFF · 난방 OFF · 문단속</b>을 하고 <b>사진을 찍어 제출</b>해야 해요. (점심은 안 내도 돼요)</li>' +
+      '<li>제출 시간: 예약한 시간 시작 ~ 당일 <b>방과후 ' + esc(ck.deadlines['방과후']) + ' / 아침 ' + esc(ck.deadlines['아침']) + '</b>까지 · 팀원 누구나 제출할 수 있어요</li>' +
+      '<li class="warn">⚠️ 제출하지 않으면 <b>이번 주 토요일 08:00에 열리는 다음 주 예약을 할 수 없어요.</b></li></ul></section>';
+  }
+  function blockBar(b) {
+    return '<div class="blockbar no-print">⛔ <b>지난주 퇴실 확인 사진을 제출하지 않아 이 주 예약이 제한돼요.</b><br><span>' +
+      b.list.map(function (x) { return esc(x.label + ' ' + x.period + ' ' + x.placeName); }).join(' · ') + ' · 선생님께 문의하세요</span></div>';
+  }
+
+  var camState = { stream: null };
+  function stopStream() { if (camState.stream) { camState.stream.getTracks().forEach(function (t) { t.stop(); }); camState.stream = null; } }
+  function nowText() { return new Date(Date.now() + S.offset).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }); }
+  // 사진을 줄이고(최대 1280px) 아래쪽에 시각·팀·장소를 새겨서 JPEG 데이터로 만듭니다.
+  function toJpeg(src, w, h, wm) {
+    var sc = Math.min(1, 1280 / Math.max(w, h)), cw = Math.round(w * sc), ch = Math.round(h * sc);
+    var c = document.createElement('canvas'); c.width = cw; c.height = ch;
+    var x = c.getContext('2d'); x.drawImage(src, 0, 0, cw, ch);
+    var fs = Math.max(14, Math.round(cw / 38)), pad = Math.round(fs * 0.5);
+    x.fillStyle = 'rgba(0,0,0,.55)'; x.fillRect(0, ch - fs - pad * 2, cw, fs + pad * 2);
+    x.fillStyle = '#fff'; x.font = 'bold ' + fs + 'px sans-serif'; x.textBaseline = 'middle';
+    x.fillText(wm, pad, ch - (fs + pad * 2) / 2);
+    return c.toDataURL('image/jpeg', 0.72);
+  }
+  function camError(e) {
+    var n = e && e.name;
+    if (n === 'NotAllowedError' || n === 'SecurityError') return '이 화면에서 카메라를 쓸 수 없어요. (카메라 권한이 막혔거나, 이 앱 화면의 보안 설정 때문일 수 있어요)';
+    if (n === 'NotFoundError' || n === 'OverconstrainedError') return '카메라를 찾을 수 없어요.';
+    return '카메라를 켤 수 없어요.' + (e && e.message ? ' (' + e.message + ')' : '');
+  }
+
+  // o: { title, sub, checks(체크리스트 필요), test(테스트 모드), wm(사진에 새길 글), allowApp(카메라 앱 방식 허용) }
+  function openCamera(o) {
+    return new Promise(function (res) {
+      var bg = document.createElement('div'); bg.className = 'modal-bg cam-bg no-print';
+      bg.innerHTML = '<div class="modal cam-modal" role="dialog" aria-modal="true" aria-label="' + esc(o.title) + '"><h2>' + esc(o.title) + '</h2>' +
+        (o.sub ? '<p class="muted pre cam-sub">' + esc(o.sub) + '</p>' : '') +
+        (o.checks ? '<div class="chk-list"><label><input type="checkbox" data-k="light"> 💡 전등을 껐어요 (OFF)</label><label><input type="checkbox" data-k="heat"> 🔥 난방을 껐어요 (OFF)</label><label><input type="checkbox" data-k="lock"> 🔒 문단속을 했어요</label></div>' : '') +
+        '<div class="cam-view"><video playsinline muted autoplay></video><img class="cam-shot" alt="촬영한 사진" hidden></div>' +
+        '<p class="cam-msg" role="status"></p><div class="acts"></div></div>';
+      var v = $('video', bg), img = $('.cam-shot', bg), msg = $('.cam-msg', bg), acts = $('.acts', bg);
+      var mode = 'start', result = null;
+      var fileIn = document.createElement('input'); fileIn.type = 'file'; fileIn.accept = 'image/*'; fileIn.setAttribute('capture', 'environment'); fileIn.hidden = true;
+      bg.appendChild(fileIn);
+      function checked() { var all = true; $$('input[type=checkbox]', bg).forEach(function (c) { if (!c.checked) all = false; }); return all; }
+      function finish(val) { stopStream(); document.removeEventListener('keydown', onKey); if (bg.parentNode) bg.parentNode.removeChild(bg); res(val); }
+      function onKey(e) { if (e.key === 'Escape') finish(null); }
+      function btn(label, cls, fn, disabled) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'btn ' + (cls || ''); b.textContent = label; b.disabled = !!disabled; b.onclick = fn; acts.appendChild(b); return b;
+      }
+      function draw() {
+        acts.innerHTML = '';
+        btn('닫기', '', function () { finish(null); });
+        if (mode === 'live') btn('📷 촬영', 'pri', capture);
+        if (mode === 'fail' || mode === 'start') {
+          btn('🔄 카메라 다시 켜기', '', startLive);
+          if (o.allowApp) btn('📱 카메라 앱으로 촬영', '', function () { fileIn.click(); });
+        }
+        if (mode === 'shot') {
+          btn('다시 찍기', '', function () { result = null; img.hidden = true; startLive(); });
+          if (!o.test) {
+            var sb = btn('✅ 제출하기', 'pri', function () { if (checked()) finish({ photo: result.photo, method: result.method, lastModified: result.lastModified, checks: { light: true, heat: true, lock: true } }); }, !checked());
+            sb.className += ' submit-btn';
+          }
+        }
+      }
+      function showShot(photo, method, lm) {
+        stopStream(); v.hidden = true; img.src = photo; img.hidden = false; result = { photo: photo, method: method, lastModified: lm }; mode = 'shot';
+        msg.textContent = o.test ? '✅ 카메라가 잘 작동해요! (' + (method === 'live' ? '앱 안의 실시간 카메라' : '카메라 앱') + ' 방식)' : (checked() ? '사진을 확인하고 제출하세요.' : '위의 3가지를 체크하면 제출할 수 있어요.');
+        draw();
+      }
+      function capture() {
+        if (!v.videoWidth) { msg.textContent = '카메라가 아직 준비 중이에요. 잠시 후 다시 눌러 주세요.'; return; }
+        showShot(toJpeg(v, v.videoWidth, v.videoHeight, o.wm + ' · ' + nowText()), 'live', Date.now());
+      }
+      function startLive() {
+        stopStream(); mode = 'start'; msg.textContent = '카메라를 켜는 중…'; draw();
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { mode = 'fail'; msg.textContent = '이 화면에서는 카메라를 바로 켤 수 없어요.' + (o.allowApp ? ' 아래 [카메라 앱으로 촬영]을 눌러 주세요.' : ' 선생님께 문의하세요.'); draw(); return; }
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false }).then(function (st) {
+          camState.stream = st; v.srcObject = st; v.hidden = false; img.hidden = true; mode = 'live';
+          msg.textContent = '교실 전체가 보이게 맞춘 뒤 [촬영]을 누르세요.'; draw();
+          if (v.play) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+        }).catch(function (e) { mode = 'fail'; msg.textContent = camError(e) + (o.allowApp ? '\n[카메라 앱으로 촬영]을 눌러 보세요.' : ''); draw(); });
+      }
+      fileIn.onchange = function () {
+        var f = fileIn.files && fileIn.files[0]; if (!f) return;
+        var url = URL.createObjectURL(f), im = new Image();
+        im.onload = function () { showShot(toJpeg(im, im.naturalWidth, im.naturalHeight, o.wm + ' · ' + nowText()), 'app', f.lastModified); URL.revokeObjectURL(url); };
+        im.onerror = function () { msg.textContent = '사진을 읽을 수 없어요. 다시 촬영해 주세요.'; URL.revokeObjectURL(url); };
+        im.src = url; fileIn.value = '';
+      };
+      $$('input[type=checkbox]', bg).forEach(function (c) {
+        c.onchange = function () {
+          var sb = $('.submit-btn', bg); if (sb) sb.disabled = !checked();
+          if (mode === 'shot' && !o.test) msg.textContent = checked() ? '사진을 확인하고 제출하세요.' : '위의 3가지를 체크하면 제출할 수 있어요.';
+        };
+      });
+      bg.addEventListener('mousedown', function (e) { if (e.target === bg) finish(null); });
+      document.addEventListener('keydown', onKey);
+      $('#modalRoot').appendChild(bg);
+      startLive();
+    });
+  }
+
+  function testCamera(ck) {
+    return openCamera({ title: '📷 카메라 테스트', sub: '카메라가 잘 켜지는지 확인해요. 사진은 저장·전송되지 않아요.', test: true, wm: '카메라 테스트', allowApp: ck && ck.cam === 'app' });
+  }
+  function liveSt(x) {
+    if (x.st === 'done' || x.st === 'excused') return x.st;
+    var now = Date.now() + S.offset;
+    return now < x.startMs ? 'wait' : (now <= x.endMs ? 'open' : 'late');
+  }
+  function hhmm(at) { return at ? String(at).slice(11, 16) : ''; }
+  function chkStatus(x, st) {
+    if (st === 'done') return '✅ 제출 완료 · ' + esc(x.by) + ' · ' + esc(hhmm(x.at));
+    if (st === 'excused') return '➖ 면제 · ' + esc(x.reason);
+    if (st === 'open') return '🟢 제출 가능 · 마감 ' + esc(x.endLabel);
+    if (st === 'late') return '⛔ 미제출 (마감 ' + esc(x.endLabel) + ' 지남)';
+    return '⏳ ' + esc(x.startLabel) + '부터 제출 가능 (마감 ' + esc(x.endLabel) + ')';
+  }
+
+  function renderChk() { return isT() ? renderChkAdmin() : renderChkStudent(); }
+
+  function chkWeekNav(range) {
+    return '<div class="weeknav no-print"><button class="btn sm" id="cPrev" type="button">◀ 이전 주</button><div class="range">' + esc(range) + '</div><button class="btn sm" id="cNext" type="button">다음 주 ▶</button></div>';
+  }
+  function bindChkNav() {
+    $('#cPrev').onclick = function () { S.chkMonday = addWeeks(S.chkMonday, -1); renderChk(); };
+    $('#cNext').onclick = function () { S.chkMonday = addWeeks(S.chkMonday, 1); renderChk(); };
+  }
+
+  function renderChkStudent() {
+    loading();
+    api('getCheckout', S.chkMonday).then(function (r) {
+      if (bad(r)) return;
+      S.chkMonday = r.monday;
+      var items = r.items.map(function (x) { return { x: x, st: liveSt(x) }; });
+      var late = items.filter(function (i) { return i.st === 'late'; });
+      var h = '<div class="center"><h2 style="margin-bottom:10px">📷 퇴실 확인 · ' + esc(r.team) + '</h2>' + chkWeekNav(r.range) +
+        (r.check.enabled ? checkNotice(r.check) : '<div class="card" style="margin-bottom:12px"><p class="muted" style="margin:0">퇴실 확인 기능이 아직 켜져 있지 않아요.</p></div>');
+      if (late.length) h += '<div class="blockbar">⛔ <b>미제출이 있어요.</b> 이대로면 다음 주 예약을 할 수 없어요.<br><span>' + late.map(function (i) { return esc(i.x.label + ' ' + i.x.period + ' ' + i.x.placeName); }).join(' · ') + ' · 선생님께 문의하세요</span></div>';
+      h += '<div class="card chk-card">';
+      if (!items.length) h += '<p class="empty-msg">이 주에는 우리 팀의 아침·방과후 예약이 없어요.</p>';
+      items.forEach(function (i, k) {
+        var x = i.x;
+        h += '<div class="chk-item st-' + i.st + '"><div class="l"><b>' + esc(x.label) + ' ' + esc(x.period) + '</b><small>' + esc(x.time) + ' · ' + esc(x.placeName) + ' · 예약 ' + esc(x.reserver) + '</small>' +
+          '<span class="stt">' + chkStatus(x, i.st) + '</span></div>' +
+          (i.st === 'open' ? '<button class="btn pri" data-k="' + k + '" type="button">📷 사진 제출</button>' : '') + '</div>';
+      });
+      h += '</div><p style="text-align:center"><button class="btn sm ghost" id="camTest" type="button">📷 카메라 테스트</button></p></div>';
+      $('#content').innerHTML = h;
+      bindChkNav();
+      $('#camTest').onclick = function () { testCamera(r.check); };
+      $$('#content button[data-k]').forEach(function (b) {
+        b.onclick = function () {
+          var x = items[+b.dataset.k].x;
+          openCamera({
+            title: '퇴실 확인 사진', test: false, checks: true, allowApp: r.check.cam === 'app',
+            sub: x.label + ' ' + x.period + ' · ' + x.placeName + '\n전등·난방·문단속을 확인하고, 교실 전체가 보이게 찍어 주세요.',
+            wm: r.team + ' · ' + x.placeName + ' · ' + x.period
+          }).then(function (c) {
+            if (!c) return;
+            busy(true);
+            api('submitCheckout', x.resId, c.photo, { method: c.method, lastModified: c.lastModified, checks: c.checks }).then(function (s) {
+              busy(false);
+              if (!s.ok) bad(s, '제출 불가'); else dialog('제출 완료 ✅', '<p class="pre">퇴실 확인 사진이 제출되었어요.\n수고했어요!</p>', [{ label: '확인', v: 'ok', cls: 'pri' }]);
+              if (S.token) renderChk();
+            });
+          });
+        };
+      });
+    });
+  }
+
+  function renderChkAdmin() {
+    loading();
+    api('getCheckoutAdmin', S.chkMonday).then(function (r) {
+      if (bad(r)) return;
+      S.chkMonday = r.monday;
+      var items = r.items.map(function (x) { return { x: x, st: liveSt(x) }; });
+      var late = {}; items.forEach(function (i) { if (i.st === 'late') late[i.x.team] = true; });
+      var lateTeams = Object.keys(late);
+      var h = '<div class="center wide"><h2 style="margin-bottom:10px">📷 퇴실 확인 현황</h2>' + chkWeekNav(r.range);
+      if (!r.check.enabled) h += '<div class="notice">퇴실 확인 기능이 꺼져 있어요. [설정] 시트의 "퇴실확인 시작일"에 날짜를 적으면 켜집니다.</div>';
+      h += lateTeams.length
+        ? '<div class="blockbar">⛔ <b>미제출 팀: ' + esc(lateTeams.join(', ')) + '</b><br><span>' + esc(r.nextWeekLabel) + ' 주(다음 주) 예약이 제한됩니다. 사정이 있으면 아래에서 [면제]하세요.</span></div>'
+        : '<div class="banner open">✅ <b>미제출 팀이 없어요</b><span>마감 시각이 지난 예약 기준</span></div>';
+      if (r.teams.length) {
+        h += '<div class="card tw"><table class="list"><thead><tr><th>팀</th><th>대상</th><th>제출</th><th>미제출</th><th>면제</th></tr></thead><tbody>' +
+          r.teams.map(function (t) { return '<tr><td>' + esc(t.team) + '</td><td>' + t.total + '</td><td>' + t.done + '</td><td class="' + (late[t.team] ? 'me' : '') + '">' + (late[t.team] ? '⚠ ' : '') + t.late + '</td><td>' + t.excused + '</td></tr>'; }).join('') + '</tbody></table></div>';
+      }
+      h += '<div class="card chk-card" style="margin-top:12px">';
+      if (!items.length) h += '<p class="empty-msg">이 주에는 퇴실 확인 대상(아침·방과후) 예약이 없어요.</p>';
+      items.forEach(function (i, k) {
+        var x = i.x, canUn = i.st === 'excused' && String(x.reason).indexOf('휴무일') !== 0;
+        h += '<div class="chk-item st-' + i.st + '"><div class="l"><b>' + esc(x.label) + ' ' + esc(x.period) + ' · ' + esc(x.placeName) + '</b><small>' + esc(x.team) + ' · 예약 ' + esc(x.reserver) + ' · ' + esc(x.time) + '</small>' +
+          '<span class="stt">' + chkStatus(x, i.st) + (x.method ? ' <i class="muted">(' + (x.method === 'live' ? '실시간 카메라' : '카메라 앱') + ')</i>' : '') + '</span></div><div class="btns">' +
+          (x.hasPhoto ? '<button class="btn sm" data-a="photo" data-k="' + k + '" type="button">🖼 사진 보기</button>' : '') +
+          (i.st === 'wait' || i.st === 'open' || i.st === 'late' ? '<button class="btn sm" data-a="ex" data-k="' + k + '" type="button">면제</button>' : '') +
+          (canUn ? '<button class="btn sm" data-a="unex" data-k="' + k + '" type="button">면제 해제</button>' : '') + '</div></div>';
+      });
+      h += '</div><p style="text-align:center"><button class="btn sm ghost" id="camTest" type="button">📷 카메라 테스트</button></p></div>';
+      $('#content').innerHTML = h;
+      bindChkNav();
+      $('#camTest').onclick = function () { testCamera(r.check); };
+      $$('#content button[data-a]').forEach(function (b) {
+        b.onclick = function () {
+          var x = items[+b.dataset.k].x, a = b.dataset.a;
+          if (a === 'photo') {
+            busy(true);
+            api('getPhoto', x.resId).then(function (p) {
+              busy(false); if (bad(p)) return;
+              dialog('퇴실 확인 사진', '<img class="photo" alt="제출된 사진" src="' + p.dataUrl + '"><p class="muted" style="font-size:.85rem;margin:8px 0 0">' + esc(x.team + ' · ' + x.label + ' ' + x.period + ' ' + x.placeName) + '<br>제출 ' + esc(p.by) + ' · ' + esc(p.at) + '</p>',
+                [{ label: '닫기', v: 'ok', cls: 'pri' }]);
+            });
+          } else if (a === 'ex') {
+            dialog('미제출 면제', '<p class="pre">' + esc(x.team + ' · ' + x.label + ' ' + x.period + ' ' + x.placeName) + '</p><label for="exMemo" class="fld">사유 (선택)</label><input id="exMemo" type="text" placeholder="예: 정전, 행사">',
+              [{ label: '취소', v: 'no' }, { label: '면제하기', v: 'yes', cls: 'pri', collect: function (bg) { return $('#exMemo', bg).value; } }]).then(function (d) {
+              if (d.v !== 'yes') return;
+              busy(true); api('setExempt', x.resId, true, d.data).then(function (z) { busy(false); if (!bad(z)) { toast('면제했어요'); renderChk(); } });
+            });
+          } else {
+            busy(true); api('setExempt', x.resId, false, '').then(function (z) { busy(false); if (!bad(z)) { toast('면제를 해제했어요'); renderChk(); } });
+          }
+        };
+      });
+    });
   }
 
   // ---------- 시작 ----------
