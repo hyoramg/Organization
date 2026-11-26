@@ -563,7 +563,7 @@
           var x = items[+b.dataset.k].x;
           openCamera({
             title: '퇴실 확인 사진', test: false, checks: true, allowApp: r.check.cam === 'app',
-            sub: x.label + ' ' + x.period + ' · ' + x.placeName + '\n전등·난방·문단속을 확인하고, 교실 전체가 보이게 찍어 주세요.',
+            sub: x.label + ' ' + x.period + ' · ' + x.placeName + '\n전등·난방·문단속을 확인하고, 교실 전체가 보이게 찍어 주세요.\n(사람 얼굴은 나오지 않게 해 주세요)',
             wm: r.team + ' · ' + x.placeName + ' · ' + x.period
           }).then(function (c) {
             if (!c) return;
@@ -594,7 +594,7 @@
         : '<div class="banner open">✅ <b>미제출 팀이 없어요</b><span>마감 시각이 지난 예약 기준</span></div>';
       if (r.teams.length) {
         h += '<div class="card tw"><table class="list"><thead><tr><th>팀</th><th>대상</th><th>제출</th><th>미제출</th><th>면제</th></tr></thead><tbody>' +
-          r.teams.map(function (t) { return '<tr><td>' + esc(t.team) + '</td><td>' + t.total + '</td><td>' + t.done + '</td><td class="' + (late[t.team] ? 'me' : '') + '">' + (late[t.team] ? '⚠ ' : '') + t.late + '</td><td>' + t.excused + '</td></tr>'; }).join('') + '</tbody></table></div>';
+          r.teams.map(function (t) { return '<tr><td>' + esc(t.team) + '</td><td>' + t.total + '</td><td>' + t.done + '</td><td class="' + (late[t.team] ? 'late-n' : '') + '">' + (late[t.team] ? '⚠ ' : '') + t.late + '</td><td>' + t.excused + '</td></tr>'; }).join('') + '</tbody></table></div>';
       }
       h += '<div class="card chk-card" style="margin-top:12px">';
       if (!items.length) h += '<p class="empty-msg">이 주에는 퇴실 확인 대상(아침·방과후) 예약이 없어요.</p>';
